@@ -1,2 +1,2 @@
 GET http://localhost:3002/api/users
-// Content-Type: application/json
+Content-Type: application/json

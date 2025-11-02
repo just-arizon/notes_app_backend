@@ -1,13 +1,14 @@
+const jwt = require('jsonwebtoken')
 const notesRouter = require('express').Router()
 const Note = require('../models/note')
 const User = require('../models/user')
-const usersRouter = require('./users')
 
-notesRouter.get('/',async (request, response) => {
+
+notesRouter.get('/', async (request, response) => {
   const notes = await Note.find({}).populate('user', { username: 1, name: 1 })
-  response.json(notes)
-  })
 
+  response.json(notes)
+})
 
 notesRouter.get('/:id', async (request, response) => {
   const note = await Note.findById(request.params.id)
@@ -15,16 +16,28 @@ notesRouter.get('/:id', async (request, response) => {
     response.json(note)
   } else {
     response.status(404).end()
-  }
+  } 
 })
+
+const getTokenFrom = request => {
+  const authorization = request.get('authorization')
+  if (authorization && authorization.startsWith('Bearer ')) {
+    return authorization.replace('Bearer ', '')
+  }
+  return null
+}
 
 notesRouter.post('/', async (request, response) => {
   const body = request.body
 
-  const user = await User.findById(body.userId)
+  const decodedToken = jwt.verify(getTokenFrom(request), process.env.SECRET)
+  if (!decodedToken.id) {
+    return response.status(401).json({ error: 'token invalid' })
+  }
+  const user = await User.findById(decodedToken.id)
 
-    if (!user) {
-    return response.status(400).json({ error: 'userId missing or not valid' })
+  if (!user) {
+    return response.status(400).json({ error: 'UserId missing or not valid' })
   }
 
   const note = new Note({
@@ -34,8 +47,9 @@ notesRouter.post('/', async (request, response) => {
   })
 
   const savedNote = await note.save()
-    user.notes = user.notes.concat(savedNote._id)
+  user.notes = user.notes.concat(savedNote._id)
   await user.save()
+
   response.status(201).json(savedNote)
 })
 
@@ -45,16 +59,20 @@ notesRouter.delete('/:id', async (request, response) => {
 })
 
 notesRouter.put('/:id', (request, response, next) => {
-  const body = request.body
+  const { content, important } = request.body
 
-  const note = {
-    content: body.content,
-    important: body.important,
-  }
+  Note.findById(request.params.id)
+    .then(note => {
+      if (!note) {
+        return response.status(404).end()
+      }
 
-  Note.findByIdAndUpdate(request.params.id, note, { new: true })
-    .then(updatedNote => {
-      response.json(updatedNote)
+      note.content = content
+      note.important = important
+
+      return note.save().then(updatedNote => {
+        response.json(updatedNote)
+      })
     })
     .catch(error => next(error))
 })
